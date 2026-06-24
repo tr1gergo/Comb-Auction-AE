@@ -132,7 +132,7 @@ def draw_grid_solution(
 
     # Reserve room on the right so the legend stays fully outside the axes.
     if created_axes:
-        fig.subplots_adjust(right=0.78)
+        fig.subplots_adjust(right=0.6)
 
     return fig, ax
 

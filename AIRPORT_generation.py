@@ -77,6 +77,10 @@ def _build_shift_utility(
 # ---------------------------------------------------------------------------
 # Instance generation
 
+import numpy as np
+from typing import Dict, Any, Optional, List
+
+# (Assume _seed_all, _derive_num_players, _sample_wait_time, _build_shift_utility are defined as before)
 
 def generate_airport_instance(
     num_items: int,
@@ -84,27 +88,17 @@ def generate_airport_instance(
     max_budget: int,
     num_players: Optional[int] = None,
     rng_seed: Optional[int] = None,
+    fixed_schedules: Optional[List[Dict[str, int]]] = None
 ) -> Dict[str, Any]:
     """
     Generate an airport slot-auction instance.
-
+    
     Parameters
     ----------
-    num_items:
-        Number of time-slots.
-    max_cap:
-        Uniform capacity assigned to every slot.
-    max_budget:
-        Upper bound for bell-shaped budget generation.
-    num_players:
-        Optional override. If None, uses num_players * 2 = num_items * (max_cap - 1).
-    rng_seed:
-        Optional seed for reproducibility.
-
-    Returns
-    -------
-    dict
-        Contains capacities, budgets, and per-airline feasible pair bids.
+    # ... [previous docstrings] ...
+    fixed_schedules:
+        Optional list of dictionaries containing 'wait', 'arrival', and 'departure' 
+        for each player to keep their timeslots fixed across resampled markets.
     """
     if num_items < 2:
         raise ValueError("num_items must be at least 2.")
@@ -113,10 +107,10 @@ def generate_airport_instance(
     if max_budget < 1:
         raise ValueError("max_budget must be at least 1.")
 
-    rng = _seed_all(rng_seed)
+    rng = _seed_all(rng_seed) # Replace with your random seed function
     np.random.default_rng(rng_seed)
 
-    derived_players = _derive_num_players(num_items, max_cap)
+    derived_players = _derive_num_players(num_items, max_cap) # Replace with your derivation
     num_players_value = derived_players if num_players is None else int(num_players)
     if num_players_value < 1:
         raise ValueError("num_players must be positive.")
@@ -130,14 +124,19 @@ def generate_airport_instance(
 
     players: List[Dict[str, Any]] = []
     for player_idx in range(num_players_value):
-        wait_i = _sample_wait_time(num_items, rng)
-
-        # Choose the optimal arrival so that departure = arrival + wait_i is in range.
-        max_start = num_items - wait_i - 1
-        if max_start < 0:
-            max_start = 0
-        arr_i = int(rng.integers(0, max_start + 1))
-        dep_i = arr_i + wait_i
+        
+        # --- NEW LOGIC: Use fixed schedules if provided ---
+        if fixed_schedules is not None:
+            wait_i = fixed_schedules[player_idx]['wait']
+            arr_i = fixed_schedules[player_idx]['arrival']
+            dep_i = fixed_schedules[player_idx]['departure']
+        else:
+            wait_i = _sample_wait_time(num_items, rng)
+            max_start = num_items - wait_i - 1
+            if max_start < 0:
+                max_start = 0
+            arr_i = int(rng.integers(0, max_start + 1))
+            dep_i = arr_i + wait_i
 
         max_shift = max(0, wait_i // 2 - 1)
         peak_utility = float(rng.integers(max(1, max_budget), 2 * max_budget + 1))

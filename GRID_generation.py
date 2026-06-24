@@ -81,7 +81,7 @@ def _direction_offsets() -> Dict[str, Tuple[int, int]]:
 # Instance generation
 
 
-def generate_grid_instance(
+def generate_grid_instance_old(
     n: int,
     m: int,
     C: int,
@@ -197,6 +197,111 @@ def generate_grid_instance(
         "players": players,
     }
 
+
+def generate_grid_instance(
+    n: int,
+    m: int,
+    C: int,
+    max_cap: int,
+    max_budget: int,
+    max_utility: int,
+    rng_seed: Optional[int] = None,
+    fixed_bases: Optional[List[Tuple[int, int]]] = None,
+    fixed_capacities: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    """
+    Generate a GRID auction instance. Allows fixing public infrastructure 
+    (bases and capacities) for Bayesian mechanism design simulations.
+    """
+    if n < 1:
+        raise ValueError("Grid size n must be positive.")
+    if m < 0:
+        raise ValueError("Number of players m must be non-negative.")
+    if C < 0:
+        raise ValueError("Path length C must be non-negative.")
+
+    rng = _seed_all(rng_seed)
+    np.random.default_rng(rng_seed)
+
+    # 1. PUBLIC INFO: Determine Player Bases
+    if fixed_bases is not None:
+        bases = fixed_bases
+    else:
+        # Sample player bases uniformly with replacement.
+        bases = [(int(r), int(c)) for r, c in rng.integers(0, n, size=(m, 2))]
+
+    base_counts = np.zeros((n, n), dtype=int)
+    for r, c in bases:
+        base_counts[r, c] += 1
+
+    # 2. PUBLIC INFO: Items and Capacities
+    items: List[Tuple[int, int]] = []
+    item_index: Dict[Tuple[int, int], int] = {}
+    for r in range(n):
+        for c in range(n):
+            if base_counts[r, c] == 0:
+                idx = len(items)
+                items.append((r, c))
+                item_index[(r, c)] = idx
+
+    num_items = len(items)
+    
+    if fixed_capacities is not None:
+        capacities = fixed_capacities.copy()
+    else:
+        capacities = rng.integers(1, max_cap + 1, size=num_items, dtype=int).astype(float)
+
+    # 3. PRIVATE INFO: Budgets (Resampled)
+    if max_budget < 1:
+        raise ValueError("max_budget must be at least 1.")
+    if m > 0:
+        budget_draws = rng.integers(1, max_budget + 1, size=(2, m))
+        budgets = np.rint(budget_draws.mean(axis=0)).astype(float)
+        budgets = np.clip(budgets, 1, max_budget)
+    else:
+        budgets = np.array([], dtype=float)
+
+    # 4. PRIVATE INFO: Utilities (Resampled)
+    directions = _direction_offsets()
+    players: List[Dict[str, Any]] = []
+
+    for base_idx, (r0, c0) in enumerate(bases):
+        path_map: Dict[str, List[Tuple[int, float]]] = {}
+
+        for dir_name, (dr, dc) in directions.items():
+            path: List[Tuple[int, float]] = []
+            for step in range(1, C + 1):
+                r = r0 + dr * step
+                c = c0 + dc * step
+                if r < 0 or r >= n or c < 0 or c >= n:
+                    break  # Hit boundary.
+                if base_counts[r, c] > 0:
+                    break  # Hit another base.
+
+                idx = item_index.get((r, c))
+                if idx is None:
+                    break
+
+                utility = float(rng.integers(1, max_utility + 1))
+                path.append((idx, utility))
+            path_map[dir_name] = path
+
+        players.append({"base": (r0, c0), "paths": path_map, "id": base_idx})
+
+    max_budget_value = float(np.max(budgets)) if budgets.size else 0.0
+
+    return {
+        "grid_size": n,
+        "num_players": m,
+        "max_path_length": C,
+        "items": items,
+        "num_items": num_items,
+        "item_index": item_index,
+        "capacities": capacities,
+        "budgets": budgets,
+        "max_budget": max_budget_value,
+        "players": players,
+    }
 
 # ---------------------------------------------------------------------------
 # Demand logic
